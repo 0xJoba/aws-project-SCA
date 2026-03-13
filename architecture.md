@@ -2,107 +2,171 @@
 
 ## Overview
 
-This project deploys a two-tier web application consisting of WordPress and MySQL using Docker containers on an AWS EC2 instance.
+This project deploys a containerized WordPress application with a MySQL database on AWS.  
+The system follows a simple two-tier architecture consisting of:
 
-The goal is to demonstrate infrastructure provisioning, container orchestration, persistent storage, and automated database backups.
+1. A web/application layer running WordPress
+2. A database layer running MySQL
 
-The architecture uses the following AWS services:
+Both services run as Docker containers on an EC2 instance. Persistent storage is provided through an attached EBS volume, while automated database backups are stored in an S3 bucket.
 
-- EC2 for compute
-- EBS for persistent database storage
-- S3 for database backups
-- Docker and Docker Compose for container management
-
----
-
-## System Architecture
-
-User → Web Browser  
-↓  
-Public Internet  
-↓  
-EC2 Instance (Ubuntu Linux)  
-↓  
-Docker Engine  
-↓  
-WordPress Container  
-↓  
-MySQL Container  
-↓  
-EBS Volume (/mnt/mysql-data)
-
-Database backups are periodically uploaded to an S3 bucket.
+This architecture demonstrates core DevOps principles such as containerization, persistent storage management, automation through scripts, and cloud infrastructure design.
 
 ---
 
-## Why EBS Is Used for MySQL Data
+## Architecture Diagram
 
-Containers are ephemeral, meaning their internal storage is temporary. If MySQL stored its database files inside the container filesystem, the data would be lost whenever the container restarts or is recreated.
+User Browser
+     │
+     ▼
+ Public Internet
+     │
+     ▼
+ EC2 Instance (Ubuntu)
+     │
+     ▼
+ Docker Engine
+   /        \
+  ▼          ▼
+WordPress    MySQL
+Container    Container
+                │
+                ▼
+         EBS Volume
+      (/mnt/mysql-data)
+                │
+                ▼
+         Backup Script
+                │
+                ▼
+            S3 Bucket
 
-To prevent this, MySQL's data directory is mapped to an external storage location backed by an EBS volume mounted at:
+---
+
+## Components
+
+### EC2 Instance
+
+The application runs on an :contentReference[oaicite:0]{index=0} instance using Ubuntu Linux.
+
+This instance acts as the main compute environment responsible for:
+
+- Running Docker
+- Hosting the WordPress container
+- Hosting the MySQL container
+- Executing the backup script
+
+Using EC2 provides flexibility and full control over the infrastructure environment.
+
+---
+
+### Docker Containers
+
+The application uses Docker to run services in isolated environments.
+
+Docker containers make the application portable and easy to deploy because all dependencies are packaged together.
+
+Two containers are used:
+
+**WordPress Container**
+- Runs the WordPress application
+- Handles user requests from the browser
+- Communicates with the MySQL database
+
+**MySQL Container**
+- Stores all WordPress data including posts, users, and configuration
+- Runs separately from the WordPress container
+
+Containers are managed using Docker Compose, which defines both services and their networking configuration.
+
+---
+
+### Persistent Storage (EBS)
+
+The MySQL database requires persistent storage to ensure that data is not lost if containers stop or restart.
+
+To achieve this, the MySQL data directory is mapped to an external storage location backed by an :contentReference[oaicite:1]{index=1} volume.
+
+The volume is mounted on the EC2 instance at:
 
 /mnt/mysql-data
 
-This ensures that database data persists even if containers are stopped or replaced.
+This means:
+
+- If the MySQL container stops, the data remains on the EBS disk
+- If the container is recreated, MySQL reads the same database files
+- Data remains safe as long as the EBS volume exists
+
+This separation of compute and storage is a key principle in modern cloud architecture.
 
 ---
 
-## Security Group Configuration
+### Database Backups
 
-The EC2 instance uses a security group with the following inbound rules:
+In addition to persistent storage, the database is backed up regularly.
 
-Port 22 (SSH)
-Purpose: Allows administrators to connect securely to the server for management.
+A script (`backup.sh`) performs the following steps:
 
-Port 80 (HTTP)
-Purpose: Allows users to access the WordPress website via a web browser.
+1. Executes `mysqldump` inside the MySQL container
+2. Creates a timestamped SQL backup file
+3. Uploads the backup file to an S3 bucket
 
-While SSH is currently open to 0.0.0.0/0 for simplicity in this assignment, a production environment would restrict SSH access to specific trusted IP addresses.
+The backups are stored in :contentReference[oaicite:2]{index=2}.
+
+Using S3 ensures that backups are stored separately from the EC2 instance and remain available even if the server is destroyed.
+
+---
+
+## Security Considerations
+
+The EC2 instance is protected using a security group.
+
+The following inbound rules are configured:
+
+Port 22 (SSH)  
+Allows administrators to connect to the server for management and troubleshooting.
+
+Port 80 (HTTP)  
+Allows users to access the WordPress website through a web browser.
+
+In a production environment, SSH access would typically be restricted to specific IP addresses instead of allowing access from anywhere.
 
 ---
 
 ## Failure Scenarios
 
-If the EC2 instance crashes or is terminated:
+This architecture is designed to handle several potential failures.
 
-Lost components:
-- EC2 server
-- Running Docker containers
+If Docker containers stop:
+- Containers can be restarted easily using Docker Compose
+- Database data remains safe on the EBS volume
 
-Components that survive:
-- EBS volume containing MySQL database files
-- S3 backups of the database
+If the EC2 instance crashes:
+- The instance can be replaced with a new one
+- The EBS volume can be reattached
+- Database backups can be restored from S3
 
-This design ensures that the database can be restored by attaching the EBS volume to a new EC2 instance or by restoring backups from S3.
-
----
-
-## Backup Strategy
-
-A backup script (`backup.sh`) creates a MySQL dump using `mysqldump` executed inside the running MySQL container.
-
-The dump file is timestamped and uploaded to an S3 bucket using the AWS CLI.
-
-This provides an additional layer of data protection beyond EBS persistence.
+This layered approach improves system resilience and data protection.
 
 ---
 
-## Scaling Considerations
+## Scalability Considerations
 
-If the application needed to support significantly more users, several improvements could be made:
+This architecture is suitable for small workloads or development environments. However, it can be extended to support larger systems.
 
-- Place WordPress behind an AWS Application Load Balancer
-- Run multiple EC2 instances in an Auto Scaling Group
-- Move the database to Amazon RDS for managed database scaling
-- Store uploaded files using Amazon S3 instead of local storage
-- Add CloudFront CDN for faster global content delivery
+Possible improvements include:
 
-These improvements would increase reliability, scalability, and performance.
+- Using a load balancer to distribute traffic across multiple servers
+- Moving the database to a managed service such as Amazon RDS
+- Using a CDN such as CloudFront for faster content delivery
+- Implementing auto scaling for high availability
+
+These improvements would make the architecture more robust and production-ready.
 
 ---
 
 ## Conclusion
 
-This architecture demonstrates a simple but realistic cloud deployment for a containerized web application.
+This project demonstrates a basic but practical cloud architecture for deploying a containerized web application.
 
-It separates compute, storage, and backups to improve reliability and maintainability while leveraging AWS cloud services for infrastructure.
+The design separates application services, storage, and backups to ensure better reliability and maintainability. By using AWS services such as EC2, EBS, and S3 along with Docker containers, the system follows modern DevOps deployment practices.
